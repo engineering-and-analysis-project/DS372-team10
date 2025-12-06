@@ -1,78 +1,90 @@
 import pandas as pd
-import numpy as np
+import matplotlib.pyplot as plt
 
-# Paths
-payments_path = 'olist_order_payments_dataset.csv'
-reviews_path = 'olist_order_reviews_dataset.csv'
+# =======================
+# 1. Load the datasets
+# =======================
+payments = pd.read_csv('olist_order_payments_dataset.csv')
+reviews = pd.read_csv('olist_order_reviews_dataset.csv')
 
-# 1. Load
-payments = pd.read_csv(payments_path)
-reviews = pd.read_csv(reviews_path)
-
-# 2. Basic info
-print("Payments shape:", payments.shape)
-print("Reviews shape:", reviews.shape)
-
-print("\nPayments dtypes:\n", payments.dtypes)
-print("\nReviews dtypes:\n", reviews.dtypes)
-
-# 3. Missing values summary
-print("\nMissing values (payments):\n", payments.isna().sum())
-print("\nMissing values (reviews):\n", reviews.isna().sum())
-
-# 4. Basic stats
-print("\nPayment value stats:\n", payments['payment_value'].describe())
-print("\nTop payment types:\n", payments['payment_type'].value_counts())
-print("\nReview score distribution:\n", reviews['review_score'].value_counts())
-
-# 5. Convert date columns in reviews to datetime
+# =======================
+# 2. Convert date columns
+# =======================
 for col in ['review_creation_date', 'review_answer_timestamp']:
     reviews[col] = pd.to_datetime(reviews[col], errors='coerce')
 
-# compute response time in hours
+# Compute response time
 reviews['review_response_time_hours'] = (
     (reviews['review_answer_timestamp'] - reviews['review_creation_date'])
     .dt.total_seconds() / 3600
 )
 
-# flag missing comment
+# Flag missing comment
 reviews['is_comment_missing'] = reviews['review_comment_message'].isna()
 
-# 6. Aggregate payments by order_id
+# =======================
+# 3. Aggregate payments
+# =======================
 payments_agg = payments.groupby('order_id').agg(
-    total_payment=('payment_value','sum'),
-    num_payments=('payment_value','count'),
-    avg_payment=('payment_value','mean'),
-    max_payment=('payment_value','max'),
-    payment_types=('payment_type', lambda x: ','.join(sorted(x.unique())))
+    total_payment=('payment_value', 'sum'),
+    num_payments=('payment_value', 'count'),
+    avg_payment=('payment_value', 'mean'),
+    max_payment=('payment_value', 'max'),
 ).reset_index()
 
-# 7. Merge reviews and payments
+# =======================
+# 4. Merge with reviews
+# =======================
 reviews_first = reviews.sort_values('review_creation_date') \
                        .drop_duplicates('order_id', keep='first')
 
 merged = payments_agg.merge(
-    reviews_first[['order_id','review_id','review_score','review_comment_message',
-                   'is_comment_missing','review_response_time_hours',
-                   'review_creation_date']],
+    reviews_first[['order_id', 'review_score', 'review_comment_message',
+                   'review_response_time_hours']],
     on='order_id', how='left'
 )
 
-# 8. Type corrections & duplicates
-merged['num_payments'] = merged['num_payments'].astype(int)
-merged = merged.drop_duplicates(subset=['order_id'])
+# Fill missing review scores (if any)
+merged['review_score'] = merged['review_score'].fillna(0)
 
-# 9. Outlier flagging
-merged['is_payment_outlier'] = merged['total_payment'] > 10000
+# =======================
+# 5. PLOTS
+# =======================
 
-# 10. Clean text fields
-merged['review_comment_message'] = merged['review_comment_message'] \
-    .fillna("No comment provided").astype(str)
+# -------- Plot 1: Review Score Histogram -------- #
+plt.figure()
+merged['review_score'].plot(kind='hist')
+plt.title('Review Score Distribution')
+plt.xlabel('Review Score')
+plt.ylabel('Frequency')
+plt.tight_layout()
+plt.show()
 
-# 11. Summary
-print("\nMerged shape:", merged.shape)
-print("\nMissing per column:\n", merged.isna().sum())
+# -------- Plot 2: Total Payment Histogram -------- #
+plt.figure()
+merged['total_payment'].plot(kind='hist')
+plt.title('Total Payment Distribution')
+plt.xlabel('Total Payment')
+plt.ylabel('Frequency')
+plt.tight_layout()
+plt.show()
 
-# 12. Save output
-merged.to_csv('olist_milestone1_cleaned.csv', index=False)
-print("Saved cleaned file as olist_milestone1_cleaned.csv")
+# -------- Plot 3: Avg Payment vs Review Score Scatter -------- #
+plt.figure()
+plt.scatter(merged['avg_payment'], merged['review_score'])
+plt.title('Avg Payment vs Review Score')
+plt.xlabel('Average Payment')
+plt.ylabel('Review Score')
+plt.tight_layout()
+plt.show()
+
+# -------- Plot 4: Number of Payments Histogram -------- #
+plt.figure()
+merged['num_payments'].plot(kind='hist')
+plt.title('Number of Payments Distribution')
+plt.xlabel('Number of Payments')
+plt.ylabel('Frequency')
+plt.tight_layout()
+plt.show()
+
+print("All charts generated successfully!")
